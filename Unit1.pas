@@ -7,11 +7,11 @@ uses
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, RunElevatedSupport, Winapi.ShellAPI,
   Vcl.Mask, Vcl.Grids, Vcl.ValEdit, IdIcmpClient, IdBaseComponent, IdComponent,
   IdRawBase, IdRawClient, Vcl.ExtCtrls, IdStack, KMSServers, Registry,
-  Vcl.ComCtrls, Vcl.ButtonGroup;
+  Vcl.ComCtrls, Vcl.ButtonGroup, Vcl.WinXCtrls, Vcl.ActnMan, Vcl.ActnColorMaps,
+  Vcl.Menus, Vcl.Imaging.pngimage;
 
 type
   TForm1 = class(TForm)
-    ltopIsElevated: TLabel;
     ltopIsAdmin: TLabel;
     bEzSPA: TButton;
     bNewHostname: TButton;
@@ -41,12 +41,40 @@ type
     pTop: TPanel;
     pEzButtons: TPanel;
     pcMain: TPageControl;
-    pcEZB: TTabSheet;
-    TabSheet1: TTabSheet;
-    TabSheet2: TTabSheet;
+    pcEZM: TTabSheet;
+    pcEZC: TTabSheet;
+    pcActivator: TTabSheet;
     GroupBox1: TGroupBox;
     Label1: TLabel;
     bEzUAC: TButton;
+    pcMMC: TTabSheet;
+    GroupBox4: TGroupBox;
+    bEZncpa: TButton;
+    GroupBox3: TGroupBox;
+    bEZfsmgmt: TButton;
+    bEZdiskmgmt: TButton;
+    bEZcleanmgr: TButton;
+    GroupBox2: TGroupBox;
+    bEZlusrmgr: TButton;
+    bEZgpedit: TButton;
+    lEZsecpol: TButton;
+    AI1: TActivityIndicator;
+    Label2: TLabel;
+    MainMenu1: TMainMenu;
+    N1: TMenuItem;
+    N2: TMenuItem;
+    EWSSUtility1: TMenuItem;
+    ernogonnet1: TMenuItem;
+    N3: TMenuItem;
+    N4: TMenuItem;
+    N5: TMenuItem;
+    N6: TMenuItem;
+    ObjectPascalDelphi1: TMenuItem;
+    iLogo: TImage;
+    Image1: TImage;
+    iAdmin: TImage;
+    ltopIsElevated: TLabel;
+    iNotAdmin: TImage;
     procedure FormCreate(Sender: TObject);
     procedure bNewHostnameClick(Sender: TObject);
     procedure emNewHostnameChange(Sender: TObject);
@@ -62,6 +90,14 @@ type
     procedure bEzControlClick(Sender: TObject);
     procedure bEzREGClick(Sender: TObject);
     procedure bEzMSConfigClick(Sender: TObject);
+    procedure bEZlusrmgrClick(Sender: TObject);
+    procedure bEZgpeditClick(Sender: TObject);
+    procedure lEZsecpolClick(Sender: TObject);
+    procedure bEZfsmgmtClick(Sender: TObject);
+    procedure bEZdiskmgmtClick(Sender: TObject);
+    procedure bEZcleanmgrClick(Sender: TObject);
+    procedure bEZncpaClick(Sender: TObject);
+    procedure bEzUACClick(Sender: TObject);
   private
     { Private declarations }
   public
@@ -136,7 +172,7 @@ begin
   if RunMinimized then
     begin
       StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
-      StartupInfo.wShowWindow := SW_SHOWMINIMIZED;
+      StartupInfo.wShowWindow := SW_HIDE;
     end;
   if Folder <> '' then WorkingDirP := PChar(Folder)
   else WorkingDirP := nil;
@@ -168,8 +204,13 @@ var
   Error: Integer;
   OK: Boolean;
 begin
-  OK := ExecuteProcess('Powershell.exe', Command, '', true, false, true, Error);
-  if not OK then ShowMessage('Error: ' + IntToStr(Error));
+  Form1.AI1.Animate := True;
+  try
+    OK := ExecuteProcess('Powershell.exe', Command, '', true, false, true, Error);
+    if not OK then ShowMessage('Error: ' + IntToStr(Error));
+  finally
+    Form1.AI1.Animate := False;
+  end;
 end;
 
 function PExecute(exe: String): Integer;
@@ -222,6 +263,65 @@ begin
   Result := False;
 end;
 
+function GetDosOutput(
+      CommandLine: string; Work: string = 'C:\'): string;
+var
+  SA: TSecurityAttributes;
+  SI: TStartupInfo;
+  PI: TProcessInformation;
+  StdOutPipeRead, StdOutPipeWrite: THandle;
+  WasOK: Boolean;
+  Buffer: array[0..255] of Char;
+  BytesRead: Cardinal;
+  WorkDir: string;
+  Handle: Boolean;
+begin
+  Result := '';
+  with SA do begin
+    nLength := SizeOf(SA);
+    bInheritHandle := True;
+    lpSecurityDescriptor := nil;
+  end;
+  CreatePipe(StdOutPipeRead, StdOutPipeWrite, @SA, 0);
+  try
+    with SI do
+    begin
+      FillChar(SI, SizeOf(SI), 0);
+      cb := SizeOf(SI);
+      dwFlags := STARTF_USESHOWWINDOW or STARTF_USESTDHANDLES;
+      wShowWindow := SW_HIDE;
+      hStdInput := GetStdHandle(
+          STD_INPUT_HANDLE); // не переадресовывать stdinput
+      hStdOutput := StdOutPipeWrite;
+      hStdError := StdOutPipeWrite;
+    end;
+    WorkDir := Work;
+    Handle := CreateProcess(nil, PChar('cmd.exe /C ' + CommandLine),
+                            nil, nil, True, 0, nil,
+                            PChar(WorkDir), SI, PI);
+    CloseHandle(StdOutPipeWrite);
+    if Handle then
+      try
+        repeat
+          WasOK := ReadFile(StdOutPipeRead, Buffer, 255, BytesRead, nil);
+          if BytesRead > 0 then
+          begin
+            Buffer[BytesRead] := #0;
+            Result := Result + Buffer;
+          end;
+        until not WasOK or (BytesRead = 0);
+        WaitForSingleObject(PI.hProcess, INFINITE);
+      finally
+        CloseHandle(PI.hThread);
+        CloseHandle(PI.hProcess);
+      end;
+  finally
+    CloseHandle(StdOutPipeRead);
+  end;
+end;
+
+
+
 
 
 
@@ -237,25 +337,56 @@ begin
   RunAsAdminS('SystemPropertiesAdvanced.exe', '');
 end;
 
+procedure TForm1.bEzUACClick(Sender: TObject);
+begin
+  PSExecute('UserAccountControlSettings.exe');
+end;
+
 procedure TForm1.bEzControlClick(Sender: TObject);
 begin
   PExecute('control');
 end;
 
+procedure TForm1.bEZdiskmgmtClick(Sender: TObject);
+begin
+  PSExecute('diskmgmt');
+end;
+
+procedure TForm1.bEZfsmgmtClick(Sender: TObject);
+begin
+  PSExecute('fsmgmt');
+end;
+
+procedure TForm1.bEZgpeditClick(Sender: TObject);
+begin
+  PSExecute('gpedit');
+end;
+
+procedure TForm1.bEZlusrmgrClick(Sender: TObject);
+begin
+  PSExecute('lusrmgr');
+end;
+
 procedure TForm1.bEzMSConfigClick(Sender: TObject);
 begin
   //RunAsAdminS('C:\Windows\SysNative\msconfig.exe', '')
-  RunAsAdminS('powershell', '-c "C:\Windows\SysNative\msconfig.exe"');
+  RunAsAdmin('powershell', '-c "C:\Windows\SysNative\msconfig.exe"');
+end;
+
+procedure TForm1.bEZncpaClick(Sender: TObject);
+begin
+  PSExecute('ncpa.cpl');
 end;
 
 procedure TForm1.bEzPowershellClick(Sender: TObject);
 begin
-  RunAsAdminS('UserAccountControlSettings.exe', '');
+  //RunAsAdminS('UserAccountControlSettings.exe', '');
+  RunAsAdmin('powershell', '');
 end;
 
 procedure TForm1.bEzREGClick(Sender: TObject);
 begin
-  RunAsAdminS('regedit', '');
+  RunAsAdmin('regedit', '');
 end;
 
 procedure TForm1.cbOpenActivatorClick(Sender: TObject);
@@ -268,6 +399,11 @@ procedure TForm1.bSetServerClick(Sender: TObject);
 begin
   PSExecute('slmgr /skms ' + KMSServers.SelectedKMSServer);
   bAct.Enabled := True;
+end;
+
+procedure TForm1.bEZcleanmgrClick(Sender: TObject);
+begin
+  PSExecute('cleanmgr');
 end;
 
 procedure TForm1.bActClick(Sender: TObject);
@@ -284,19 +420,28 @@ begin
   lOSChosen.Caption := 'ОС: ' + vleOSKeys.Keys[I];
   eOSKey.Text:= vleOSKeys.Cells[1,I];
   InitKMS;
-
   if ((StringReplace(eOSKey.Text, ' ', '', [rfReplaceAll, rfIgnoreCase]) <> '')) then bSetGVLK.Enabled := True else bSetGVLK.Enabled := False;
-
 end;
 
 procedure TForm1.bSetGVLKClick(Sender: TObject);
 begin
-  PSExecute('slmgr /ipk ' + StringReplace(eOSKey.Text, ' ', '', [rfReplaceAll, rfIgnoreCase]) + '');
+  bSetGVLK.Enabled := false;
+  try
+    try
+      PSExecute('slmgr /ipk ' + StringReplace(eOSKey.Text, ' ', '', [rfReplaceAll, rfIgnoreCase]) + '');
+    except
+      ShowMessage('Возможно что-то пошло не так. Обратитесь к разработчику. Код ошибки: 0x100');
+    end;
+  finally
+    bSetGVLK.Enabled := True;
+  end;
+
 end;
 
 procedure TForm1.bNewHostnameClick(Sender: TObject);
 begin
   bNewHostname.Enabled := False;
+  AI1.Animate := True;
   try
     try
       PSExecute('Rename-Computer -NewName "' + StringReplace(eNewHostname.Text, ' ', '', [rfReplaceAll, rfIgnoreCase]) + '"');
@@ -307,7 +452,7 @@ begin
     bNewHostname.Enabled := True;
     ShowMessage('Изменения вступят в силу после перезагрузки.');
   end;
-
+  AI1.Animate := False;
 end;
 
 procedure TForm1.FormCreate(Sender: TObject);
@@ -320,8 +465,21 @@ begin
 
   //Init Top labels w/ info about sys
 
-  ltopIsElevated.Caption := 'Is Elevated: ' + BoolToStr(IsElevated);
-  ltopIsAdmin.Caption := 'Is Admin: ' + BoolToStr(IsAdministrator);
+  if IsElevated then
+    begin
+      iAdmin.Visible := True;
+      iNotAdmin.Visible := False;
+      ltopIsElevated.Caption := 'Режим администратора';
+    end
+  else
+    begin
+      iAdmin.Visible := False;
+      iNotAdmin.Visible := True;
+      ltopIsElevated.Caption := 'Без прав администратора';
+    end;
+
+  //ltopIsElevated.Caption := 'Is Elevated: ' + BoolToStr(IsElevated);
+  //ltopIsAdmin.Caption := 'Is Admin: ' + BoolToStr(IsAdministrator);
   //ltopUAC.Caption := 'UAC: ' + BoolToStr(IsUACEnabled);
   ltopPN.Caption := GetRegistryValue('SOFTWARE\Microsoft\Windows NT\CurrentVersion', 'ProductName');
   ltopEditionID.Caption := GetRegistryValue('SOFTWARE\Microsoft\Windows NT\CurrentVersion', 'EditionID');
@@ -329,6 +487,16 @@ begin
 
   // Init KMS servers status and publishing it to labels
 
+  // Init PageControl pages order   (PAGEINDEX)
+  pcEZM.PageIndex := 0;
+  pcEZC.PageIndex := 1;
+  pcActivator.PageIndex := 3;
+  pcMMC.PageIndex := 2;
+end;
+
+procedure TForm1.lEZsecpolClick(Sender: TObject);
+begin
+  RunAsAdmin('secpol', '');
 end;
 
 procedure TForm1.emNewHostnameChange(Sender: TObject);
